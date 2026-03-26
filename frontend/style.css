@@ -1,0 +1,99 @@
+:root {
+  --primary: #9b51e0;
+  --secondary: #2f80ed;
+  --bg-dark: #0f101a;
+  --glass: rgba(255, 255, 255, 0.05);
+  --border: rgba(255, 255, 255, 0.1);
+}
+
+.glass-container {
+  background: var(--glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border);
+}
+
+.glow-text {
+  background: linear-gradient(to right, #9b51e0, #2f80ed);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 10px rgba(155, 81, 224, 0.4));
+}
+
+.input-field {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  padding: 1rem 1.25rem;
+  border-radius: 1rem;
+  color: white;
+  outline: none;
+  transition: all 0.3s;
+}
+
+.input-field:focus {
+  border-color: var(--primary);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 0 15px rgba(155, 81, 224, 0.1);
+}
+
+.nav-btn {
+  font-size: 1.5rem;
+  opacity: 0.4;
+  transition: all 0.3s;
+  cursor: pointer;
+}
+
+.nav-btn.active, .nav-btn:hover {
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+.glow-dot {
+  width: 12px;
+  height: 12px;
+  background: #00ff88;
+  border-radius: 50%;
+  box-shadow: 0 0 15px #00ff88;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.tab-content {
+  animation: fadeIn 0.4s ease forwards;
+}
+
+.message {
+  animation: fadeIn 0.3s ease forwards;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+
+#chat-messages {
+  scrollbar-width: none; /* Firefox */
+}
+#chat-messages::-webkit-scrollbar {
+  display: none; /* Chrome/Safari */
+}
+
+/* Wave animation fallback */
+.wave-bar {
+  width: 3px;
+  background: var(--primary);
+  transition: height 0.1s;
+}
