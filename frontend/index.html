@@ -48,7 +48,10 @@
             <section id="chat-tab" class="tab-content h-full flex flex-col">
                 <div class="flex justify-between items-center mb-6">
                     <h2 class="text-3xl font-semibold">Talk to AI</h2>
-                    <span class="text-xs text-gray-500">English / Bangla Supported</span>
+                    <div class="flex items-center space-x-3 text-xs bg-white/5 p-1 px-3 rounded-full border border-white/10">
+                        <button id="lang-en" class="px-2 py-1 rounded-md bg-purple-500 font-bold">EN</button>
+                        <button id="lang-bn" class="px-2 py-1 rounded-md opacity-40 hover:opacity-100 transition-opacity">BN</button>
+                    </div>
                 </div>
                 <div id="chat-messages" class="flex-1 space-y-4 mb-6 pr-4 overflow-y-auto scrollbar-hide">
                     <div class="message bot px-5 py-3 rounded-2xl bg-white/5 border border-white/10 self-start max-w-[80%]">How are you feeling today? You can type or record your voice.</div>
@@ -79,12 +82,21 @@
                                     <h4 class="text-sm text-gray-400 mb-2">Vocal Tone</h4>
                                     <div class="flex items-center space-x-4">
                                         <button id="record-audio-large" class="w-16 h-16 bg-purple-500 rounded-full flex items-center justify-center text-2xl active:scale-95 transition-transform">🔴</button>
-                                        <span id="record-timer" class="text-xl font-mono text-gray-300">00:00</span>
+                                        <div class="flex flex-col">
+                                            <span id="record-timer" class="text-xl font-mono text-gray-300">00:00</span>
+                                            <span id="vocal-status" class="text-[10px] text-purple-400 italic hidden">Analyzing...</span>
+                                        </div>
                                     </div>
                                 </div>
                                 <div class="p-5 bg-white/5 rounded-2xl border border-white/10">
                                     <h4 class="text-sm text-gray-400 mb-2">Combined Mood Score</h4>
                                     <div class="text-5xl font-bold glow-text" id="unified-score">--</div>
+                                </div>
+                                <div class="p-5 bg-white/5 rounded-2xl border border-white/10 flex-1 overflow-y-auto min-h-[150px]">
+                                    <h4 class="text-sm text-gray-400 mb-2">Saved Voice Notes</h4>
+                                    <div id="voice-notes-list" class="space-y-3 text-xs">
+                                        <p class="text-gray-500">Record to save notes...</p>
+                                    </div>
                                 </div>
                             </div>
                         </div>

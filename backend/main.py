@@ -1,8 +1,11 @@
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
+from langdetect import detect
 from datetime import datetime, timedelta
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from deep_translator import GoogleTranslator
@@ -33,6 +36,15 @@ class MoodLog(Base):
     score = Column(Float)
     timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     mode = Column(String) # text, audio, video
+    text = Column(String) # For historical context
+
+class VoiceNote(Base):
+    __tablename__ = "voice_notes"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    filename = Column(String)
+    text = Column(String) # Transcription
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 Base.metadata.create_all(bind=engine)
 
@@ -42,7 +54,16 @@ translator = GoogleTranslator(source='auto', target='en')
 # Using a speech emotion classifier (wav2vec2)
 audio_classifier = pipeline("audio-classification", model="ehcalabres/wav2vec2-lg-xlsr-en-speech-emotion-recognition")
 
+# For translating the reply back if needed
+bn_translator = GoogleTranslator(source='en', target='bn')
+
 app = FastAPI()
+
+# Ensure voice notes directory exists
+if not os.path.exists("backend/voice_notes"):
+    os.makedirs("backend/voice_notes")
+
+app.mount("/voice_notes", StaticFiles(directory="backend/voice_notes"), name="voice_notes")
 
 app.add_middleware(
     CORSMiddleware,
@@ -84,6 +105,14 @@ def translate_if_needed(text: str) -> str:
         pass
     return text
 
+def check_persistent_sadness(user_id: int, db: Session) -> bool:
+    # Get last 5 logs for this user
+    last_logs = db.query(MoodLog).filter(MoodLog.user_id == user_id).order_by(MoodLog.timestamp.desc()).limit(5).all()
+    if len(last_logs) < 5:
+        return False
+    # Check if ALL of them are negative (score <= -2.0)
+    return all(log.score <= -2.0 for log in last_logs)
+
 @app.post("/analyze/text")
 def analyze_text(user_id: int = Form(...), text: str = Form(...), db: Session = Depends(get_db)):
     import random
@@ -110,17 +139,38 @@ def analyze_text(user_id: int = Form(...), text: str = Form(...), db: Session = 
             "Talk to a friend or someone you trust about how you feel.",
             "Watch a funny video or a stand-up comedy clip!"
         ]
+        
+        # Check if persistent sadness (last 4 + this one = 5)
+        # We check the database first. This logic happens BEFORE the current one is saved to DB.
+        # But wait, we save to DB later in this function.
+        # So check_persistent_sadness will check the PREVIOUS 5.
+        # If we want 5 CONSTANTLY (including this one), we should check the last 4.
+        
+        last_4_sad = db.query(MoodLog).filter(MoodLog.user_id == user_id).order_by(MoodLog.timestamp.desc()).limit(4).all()
+        is_persistent = len(last_4_sad) == 4 and all(l.score <= -2.0 for l in last_4_sad)
+        
         reply += f"\n\nSuggestion: {random.choice(suggestions)}"
+        
+        if is_persistent:
+            reply += "\n\nAlert: You've been feeling low for a while. It might help to talk to a professional: 📞 +1-800-MENTAL-CARE"
     
+    # Translate back to Bengali if input was Bengali
+    if text and text.strip():
+        try:
+            if detect(text.strip()) == 'bn':
+                reply = bn_translator.translate(reply)
+        except:
+            pass
+
     # Save log
-    log = MoodLog(user_id=user_id, score=scaled_score, mode="text")
+    log = MoodLog(user_id=user_id, score=scaled_score, mode="text", text=text)
     db.add(log)
     db.commit()
     
     return {"score": scaled_score, "sentiment": scores, "reply": reply}
 
 @app.post("/analyze/audio")
-def analyze_audio(user_id: int = Form(...), file: UploadFile = File(...), db: Session = Depends(get_db)):
+def analyze_audio(user_id: int = Form(...), text: str = Form(None), file: UploadFile = File(...), db: Session = Depends(get_db)):
     import random
     
     # Save temp file
@@ -136,13 +186,80 @@ def analyze_audio(user_id: int = Form(...), file: UploadFile = File(...), db: Se
         "sad": -7, "angry": -9, "fear": -8, "disgust": -6
     }
     
-    # Get top emotion
+    # --- Deep Feature Analysis ---
+    results = audio_classifier(temp_filename)
     top_emotion = results[0]['label']
-    score = emotion_map.get(top_emotion, 0)
+    confidence = results[0]['score']
     
-    reply = f"Voice analysis: You sound {top_emotion}. (Score: {score})"
+    # --- Physical Signal Analysis (Pitch & Throw) ---
+    y, sr = librosa.load(temp_filename)
+    # Pitch (Fundamental Frequency Estimation)
+    pitches, magnitudes = librosa.piptrack(y=y, sr=sr)
+    pitch_vals = pitches[magnitudes > np.median(magnitudes)]
+    mean_pitch = np.mean(pitch_vals) if len(pitch_vals) > 0 else 0
     
-    if score <= -2.0:
+    # Energy (Throw/Intensity)
+    rms = librosa.feature.rms(y=y)
+    mean_rms = np.mean(rms)
+    
+    # Base categorical score
+    categorical_score = emotion_map.get(top_emotion, 0)
+    
+    # Heuristic Refinement based on Signal Physics (Pitch and Energy)
+    signal_adjustment = 0
+    if mean_rms < 0.01: # Very soft / whispering
+        signal_adjustment -= 2.0
+    elif mean_rms > 0.1: # Loud / shouting
+        if top_emotion in ["happy", "surprise"]: signal_adjustment += 1.0
+        else: signal_adjustment -= 2.0 # Angry/Stressed
+        
+    if mean_pitch < 100: # Very low pitch (often sad/monotone)
+        signal_adjustment -= 1.0
+    elif mean_pitch > 300: # High pitch
+        if top_emotion == "happy": signal_adjustment += 1.0
+        
+    # Scale categorical score by confidence and add signal adjustment
+    audio_score = (categorical_score * confidence) + signal_adjustment
+    audio_score = max(-10, min(10, audio_score)) # Clamp to -10 to 10
+    
+    # Text Analysis (if transcription is provided)
+    text_score = 0
+    if text and text.strip():
+        msg = text.strip().lower()
+        processed_text = translate_if_needed(msg)
+        scores = analyzer.polarity_scores(processed_text)
+        text_score = (scores.get('compound', 0)) * 10
+        
+        # Keyword "Veto" logic - if words are strong, they should override ambiguous tone
+        negative_keywords = ["sad", "depressed", "unhappy", "lonely", "anxious", "pain", "bad", "terrible", "hate", "kill"]
+        positive_keywords = ["happy", "great", "wonderful", "joy", "excellent", "good", "love", "excited"]
+        
+        # Force-shift if keywords are found to ensure keywords carry weight
+        if any(word in msg for word in negative_keywords) and text_score > -2.0:
+            text_score = -6.0
+        elif any(word in msg for word in positive_keywords) and text_score < 2.0:
+            text_score = 6.0
+    else:
+        text_score = 0
+    
+    # Combine (weighted: 30% physical audio, 70% content) - prioritizing verbal expression
+    final_score = (audio_score * 0.3 + text_score * 0.7) if text else audio_score
+    
+    # Final emotional "anchor": If user explicitly says "I am sad", don't let a high pitch/energy make it positive
+    if text and "sad" in text.lower() and final_score > 0:
+        final_score = -2.0 # Minimum sadness if explicitly stated
+    
+    analysis_details = f"Tone: {top_emotion} (conf: {confidence*100:.0f}%), Pitch: {('High' if mean_pitch > 200 else 'Low' if mean_pitch < 120 else 'Med')}, Energy: {('High' if mean_rms > 0.05 else 'Low')}"
+    
+    if text:
+        text_sentiment = "positive" if text_score > 2 else "negative" if text_score < -2 else "neutral"
+        reply = f"I've combined spectral analysis with physical pitch/energy checks. Your {analysis_details} suggests a {text_sentiment} sentiment in your words."
+    else:
+        reply = f"Signal Analysis complete. {analysis_details}."
+
+    reply += f" Mood Score: {final_score:.1f}/10."
+
+    if final_score <= -2.0:
         suggestions = [
             "Why not take a 10-minute walk outside? Fresh air helps!",
             "Listening to your favorite upbeat song might lift your spirits 🎵",
@@ -151,16 +268,46 @@ def analyze_audio(user_id: int = Form(...), file: UploadFile = File(...), db: Se
             "Talk to a friend or someone you trust about how you feel.",
             "Watch a funny video or a stand-up comedy clip!"
         ]
+        
+        # Check if persistent sadness (last 4 + this one = 5)
+        last_4_sad = db.query(MoodLog).filter(MoodLog.user_id == user_id).order_by(MoodLog.timestamp.desc()).limit(4).all()
+        is_persistent = len(last_4_sad) == 4 and all(l.score <= -2.0 for l in last_4_sad)
+        
         reply += f"\n\nSuggestion: {random.choice(suggestions)}"
+        
+        if is_persistent:
+            reply += "\n\nAlert: You've been feeling low for a while. It might help to talk to a professional: 📞 +1-800-MENTAL-CARE"
+
+    # Translate back to Bengali if input was detected as Bengali
+    if text and text.strip():
+        try:
+            if detect(text.strip()) == 'bn':
+                reply = bn_translator.translate(reply)
+        except:
+            pass
     
     # Save log
-    log = MoodLog(user_id=user_id, score=score, mode="audio")
+    log = MoodLog(user_id=user_id, score=final_score, mode="audio", text=text)
     db.add(log)
+    
+    # Permanently save as voice note
+    note_filename = f"note_{user_id}_{int(datetime.now().timestamp())}.wav"
+    note_path = os.path.join("backend", "voice_notes", note_filename)
+    import shutil
+    shutil.copy(temp_filename, note_path)
+    
+    voice_note = VoiceNote(user_id=user_id, filename=note_filename, text=text)
+    db.add(voice_note)
+    
     db.commit()
     
-    import os
     os.remove(temp_filename)
-    return {"score": score, "emotion": top_emotion, "details": results, "reply": reply}
+    return {"score": final_score, "emotion": top_emotion, "details": results, "reply": reply, "voice_note": note_filename}
+
+@app.get("/voice_history/{user_id}")
+def get_voice_history(user_id: int, db: Session = Depends(get_db)):
+    notes = db.query(VoiceNote).filter(VoiceNote.user_id == user_id).order_by(VoiceNote.timestamp.desc()).all()
+    return [{"id": n.id, "filename": n.filename, "timestamp": n.timestamp, "text": n.text, "url": f"/voice_notes/{n.filename}"} for n in notes]
 
 @app.get("/mood/history/{user_id}")
 def get_mood_history(user_id: int, db: Session = Depends(get_db)):
@@ -197,6 +344,13 @@ def get_mood_history(user_id: int, db: Session = Depends(get_db)):
         "average_mood": average_mood,
         "suggestions": suggestions
     }
+
+# --- Static Files & Frontend ---
+@app.get("/")
+async def read_index():
+    return FileResponse('frontend/index.html')
+
+app.mount("/", StaticFiles(directory="frontend"), name="frontend")
 
 if __name__ == "__main__":
     import uvicorn

@@ -19,6 +19,28 @@ const alertBanner = document.getElementById('alert-banner');
 const webcam = document.getElementById('webcam');
 const faceMood = document.getElementById('face-mood');
 const recordAudioLarge = document.getElementById('record-audio-large');
+const voiceNotesList = document.getElementById('voice-notes-list');
+let currentLang = 'en-US';
+
+// --- Language Toggle ---
+document.getElementById('lang-en').onclick = () => setLang('en-US');
+document.getElementById('lang-bn').onclick = () => setLang('bn-BD');
+
+function setLang(lang) {
+    currentLang = lang;
+    document.getElementById('lang-en').classList.remove('bg-purple-500', 'font-bold');
+    document.getElementById('lang-bn').classList.remove('bg-purple-500', 'font-bold');
+    document.getElementById('lang-en').classList.add('opacity-40');
+    document.getElementById('lang-bn').classList.add('opacity-40');
+
+    if (lang === 'en-US') {
+        document.getElementById('lang-en').classList.add('bg-purple-500', 'font-bold');
+        document.getElementById('lang-en').classList.remove('opacity-40');
+    } else {
+        document.getElementById('lang-bn').classList.add('bg-purple-500', 'font-bold');
+        document.getElementById('lang-bn').classList.remove('opacity-40');
+    }
+}
 
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', () => {
@@ -42,6 +64,7 @@ loginBtn.onclick = async () => {
         loginScreen.classList.add('hidden');
         appContainer.classList.remove('hidden');
         loadHistory();
+        loadVoiceNotes();
     } catch (err) {
         alert('Login failed. Ensure backend is running.');
     }
@@ -50,9 +73,24 @@ loginBtn.onclick = async () => {
 // --- Tabs ---
 function initTabs() {
     navBtns.forEach(btn => {
+        if (btn.classList.contains('logout')) {
+            btn.onclick = () => {
+                currentUser = null;
+                appContainer.classList.add('hidden');
+                loginScreen.classList.remove('hidden');
+                stopCamera();
+                if (chart) {
+                    chart.data.labels = [];
+                    chart.data.datasets[0].data = [];
+                    chart.update();
+                }
+            };
+            return;
+        }
+
         btn.onclick = () => {
             const tabId = btn.dataset.tab;
-            if (!tabId) return; // Logout handled separately
+            if (!tabId) return;
             
             navBtns.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
@@ -63,6 +101,7 @@ function initTabs() {
 
             if (tabId === 'media') {
                 startCamera();
+                loadVoiceNotes();
             } else {
                 stopCamera();
             }
@@ -96,10 +135,25 @@ sendChatBtn.onclick = async () => {
     addMessage('bot', data.reply);
 };
 
-function addMessage(who, text) {
+function addMessage(who, text, audioUrl = null) {
     const div = document.createElement('div');
-    div.className = `message ${who} px-5 py-3 rounded-2xl border ${who==='bot'?'bg-white/5 border-white/10 self-start':'bg-purple-500/20 border-purple-500/30 self-end ml-auto'} max-w-[80%]`;
-    div.innerText = text;
+    // Enhanced styles for messages to support audio and better layout
+    div.className = `message ${who} px-5 py-3 rounded-2xl border ${who==='bot'?'bg-white/5 border-white/10 self-start':'bg-purple-500/20 border-purple-500/30 self-end ml-auto'} max-w-[80%] flex flex-col gap-2`;
+    
+    if (text) {
+        const p = document.createElement('p');
+        p.innerText = text;
+        div.appendChild(p);
+    }
+
+    if (audioUrl) {
+        const audio = document.createElement('audio');
+        audio.controls = true;
+        audio.src = audioUrl;
+        audio.className = 'w-full h-8 mt-1 opacity-70 hover:opacity-100 transition-opacity';
+        div.appendChild(audio);
+    }
+    
     chatMessages.appendChild(div);
     chatMessages.scrollTop = chatMessages.scrollHeight;
 }
@@ -172,6 +226,7 @@ const recordTimer = document.getElementById('record-timer');
 const unifiedScore = document.getElementById('unified-score');
 
 recordAudioLarge.onclick = startRecording;
+recordVoiceBtn.onclick = startRecording;
 
 let recognition;
 
@@ -186,6 +241,8 @@ async function startRecording() {
     if (mediaRecorder && mediaRecorder.state === 'recording') {
         mediaRecorder.stop();
         recordAudioLarge.innerText = '🔴';
+        recordVoiceBtn.innerText = '🎤';
+        recordVoiceBtn.classList.remove('bg-red-500/20', 'text-red-400');
         clearInterval(recordTimerInterval);
         if (recognition) recognition.stop();
         return;
@@ -200,10 +257,30 @@ async function startRecording() {
 
     mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
     mediaRecorder.onstop = async () => {
+        // Small delay to ensure the Speech Recognition captures the very last words
+        await new Promise(r => setTimeout(r, 500)); 
+
         const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const transcript = chatInput.value;
+        
+        // Add user's voice note to the chat immediately
+        addMessage('user', transcript || "Voice message", audioUrl);
+        chatInput.value = ''; // Clear for next input
+
+        const thinkingDiv = document.createElement('div');
+        const vocalStatus = document.getElementById('vocal-status');
+        if (vocalStatus) vocalStatus.classList.remove('hidden');
+
+        thinkingDiv.className = 'message bot px-5 py-3 rounded-2xl bg-white/5 border border-white/10 self-start max-w-[80%] animate-pulse italic text-gray-400';
+        thinkingDiv.innerText = 'Analyzing voice and tone...';
+        chatMessages.appendChild(thinkingDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+
         const fd = new FormData();
         fd.append('user_id', currentUser.id);
         fd.append('file', audioBlob, 'record.wav');
+        if (transcript) fd.append('text', transcript);
 
         try {
             const resp = await fetch(`${API_URL}/analyze/audio`, { method: 'POST', body: fd });
@@ -213,27 +290,45 @@ async function startRecording() {
             addMessage('bot', data.reply);
             
             // Update unified score
-            unifiedScore.innerText = `${data.score > 0 ? '+' : ''}${data.score}`;
+            unifiedScore.innerText = `${data.score > 0 ? '+' : ''}${data.score.toFixed(1)}`;
             unifiedScore.classList.remove('text-red-400', 'text-green-400', 'text-gray-400');
             if (data.score > 0) unifiedScore.classList.add('text-green-400');
             else if (data.score < 0) unifiedScore.classList.add('text-red-400');
             else unifiedScore.classList.add('text-gray-400');
             
             loadHistory(); // refresh the chart with new data
+            loadVoiceNotes(); // refresh the voice notes list
         } catch (err) {
             console.error("Audio upload failed", err);
+            addMessage('bot', "Sorry, I couldn't analyze your voice right now. Please check your connection.");
+        } finally {
+            // ALWAYS remove the thinking indicator
+            thinkingDiv.remove();
+            if (vocalStatus) vocalStatus.classList.add('hidden');
         }
     };
 
     mediaRecorder.start();
     recordAudioLarge.innerText = '⏹️';
+    recordVoiceBtn.innerText = '⏹️';
+    recordVoiceBtn.classList.add('bg-red-500/20', 'text-red-400');
     
     // Web Speech API for transcribing
     recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-    recognition.lang = 'en-US'; 
+    recognition.lang = currentLang; 
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
     recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        chatInput.value = transcript; // Extract text to conversation tab
+        let finalTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+                finalTranscript += event.results[i][0].transcript;
+            }
+        }
+        if (finalTranscript) {
+            chatInput.value = (chatInput.value + ' ' + finalTranscript).trim();
+        }
     };
     recognition.start();
 }
@@ -285,5 +380,32 @@ async function loadHistory() {
         alertBanner.classList.remove('hidden');
     } else {
         alertBanner.classList.add('hidden');
+    }
+}
+
+async function loadVoiceNotes() {
+    if (!currentUser || !voiceNotesList) return;
+    try {
+        const resp = await fetch(`${API_URL}/voice_history/${currentUser.id}`);
+        const notes = await resp.json();
+        
+        voiceNotesList.innerHTML = notes.length ? '' : '<p class="text-gray-500">Record to save notes...</p>';
+        
+        notes.slice(0, 10).forEach(note => { // Show last 10
+            const div = document.createElement('div');
+            div.className = 'p-3 bg-white/5 rounded-xl border border-white/5 flex flex-col space-y-2';
+            const date = new Date(note.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            div.innerHTML = `
+                <div class="flex justify-between items-center text-[10px] text-gray-400">
+                    <span>${date}</span>
+                    <span class="text-purple-400 font-bold">Voice Note</span>
+                </div>
+                <audio controls src="${API_URL}${note.url}" class="w-full h-8 opacity-70 hover:opacity-100 transition-opacity"></audio>
+                <p class="text-[10px] text-gray-300 italic opacity-80 mt-1">${note.text || 'No transcription available'}</p>
+            `;
+            voiceNotesList.appendChild(div);
+        });
+    } catch (err) {
+        console.error("Failed to load voice notes", err);
     }
 }
