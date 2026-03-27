@@ -92,11 +92,13 @@
                                     <h4 class="text-sm text-gray-400 mb-2">Combined Mood Score</h4>
                                     <div class="text-5xl font-bold glow-text" id="unified-score">--</div>
                                 </div>
-                                <div class="p-5 bg-white/5 rounded-2xl border border-white/10 flex-1 overflow-y-auto min-h-[150px]">
+                                <div class="p-5 bg-white/5 rounded-2xl border border-white/10 flex-1 overflow-y-auto min-h-[150px] relative">
                                     <h4 class="text-sm text-gray-400 mb-2">Saved Voice Notes</h4>
                                     <div id="voice-notes-list" class="space-y-3 text-xs">
                                         <p class="text-gray-500">Record to save notes...</p>
                                     </div>
+                                    <!-- Live Transcription Overlay -->
+                                    <div id="live-transcript" class="absolute bottom-2 left-2 right-2 p-2 bg-purple-500/20 rounded-lg text-[10px] text-purple-300 hidden italic border border-purple-500/30">Listening...</div>
                                 </div>
                             </div>
                         </div>

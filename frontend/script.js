@@ -229,6 +229,8 @@ recordAudioLarge.onclick = startRecording;
 recordVoiceBtn.onclick = startRecording;
 
 let recognition;
+let currentTranscript = '';
+const liveTranscript = document.getElementById('live-transcript');
 
 function updateTimer() {
     recordSeconds++;
@@ -244,7 +246,6 @@ async function startRecording() {
         recordVoiceBtn.innerText = '🎤';
         recordVoiceBtn.classList.remove('bg-red-500/20', 'text-red-400');
         clearInterval(recordTimerInterval);
-        if (recognition) recognition.stop();
         return;
     }
 
@@ -257,16 +258,21 @@ async function startRecording() {
 
     mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
     mediaRecorder.onstop = async () => {
-        // Small delay to ensure the Speech Recognition captures the very last words
-        await new Promise(r => setTimeout(r, 500)); 
+        // Stop recognition first but wait a moment for final chunks
+        if (recognition) recognition.stop();
+        await new Promise(r => setTimeout(r, 1000)); 
 
         const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
         const audioUrl = URL.createObjectURL(audioBlob);
-        const transcript = chatInput.value;
+        const transcript = currentTranscript.trim();
         
         // Add user's voice note to the chat immediately
         addMessage('user', transcript || "Voice message", audioUrl);
         chatInput.value = ''; // Clear for next input
+        if (liveTranscript) {
+            liveTranscript.classList.add('hidden');
+            liveTranscript.innerText = "Listening...";
+        }
 
         const thinkingDiv = document.createElement('div');
         const vocalStatus = document.getElementById('vocal-status');
@@ -302,9 +308,9 @@ async function startRecording() {
             console.error("Audio upload failed", err);
             addMessage('bot', "Sorry, I couldn't analyze your voice right now. Please check your connection.");
         } finally {
-            // ALWAYS remove the thinking indicator
             thinkingDiv.remove();
             if (vocalStatus) vocalStatus.classList.add('hidden');
+            currentTranscript = '';
         }
     };
 
@@ -313,6 +319,12 @@ async function startRecording() {
     recordVoiceBtn.innerText = '⏹️';
     recordVoiceBtn.classList.add('bg-red-500/20', 'text-red-400');
     
+    currentTranscript = '';
+    if (liveTranscript) {
+        liveTranscript.innerText = "Listening...";
+        liveTranscript.classList.remove('hidden');
+    }
+
     // Web Speech API for transcribing
     recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
     recognition.lang = currentLang; 
@@ -321,13 +333,20 @@ async function startRecording() {
 
     recognition.onresult = (event) => {
         let finalTranscript = '';
+        let interimTranscript = '';
         for (let i = event.resultIndex; i < event.results.length; ++i) {
             if (event.results[i].isFinal) {
                 finalTranscript += event.results[i][0].transcript;
+            } else {
+                interimTranscript += event.results[i][0].transcript;
             }
         }
         if (finalTranscript) {
-            chatInput.value = (chatInput.value + ' ' + finalTranscript).trim();
+            currentTranscript += ' ' + finalTranscript;
+            chatInput.value = currentTranscript.trim();
+        }
+        if (liveTranscript) {
+            liveTranscript.innerText = (currentTranscript + ' ' + interimTranscript).trim() || 'Listening...';
         }
     };
     recognition.start();
