@@ -287,6 +287,9 @@ async function startRecording() {
         fd.append('user_id', currentUser.id);
         fd.append('file', audioBlob, 'record.wav');
         if (transcript) fd.append('text', transcript);
+        if (faceMood && faceMood.innerText && !faceMood.innerText.includes("Detecting") && !faceMood.innerText.includes("Loading") && !faceMood.innerText.includes("No Face")) {
+            fd.append('face_emotion', faceMood.innerText);
+        }
 
         try {
             const resp = await fetch(`${API_URL}/analyze/audio`, { method: 'POST', body: fd });

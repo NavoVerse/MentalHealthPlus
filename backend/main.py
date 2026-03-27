@@ -170,7 +170,7 @@ def analyze_text(user_id: int = Form(...), text: str = Form(...), db: Session = 
     return {"score": scaled_score, "sentiment": scores, "reply": reply}
 
 @app.post("/analyze/audio")
-def analyze_audio(user_id: int = Form(...), text: str = Form(None), file: UploadFile = File(...), db: Session = Depends(get_db)):
+def analyze_audio(user_id: int = Form(...), text: str = Form(None), face_emotion: str = Form(None), file: UploadFile = File(...), db: Session = Depends(get_db)):
     import random
     
     # Save temp file
@@ -245,11 +245,29 @@ def analyze_audio(user_id: int = Form(...), text: str = Form(None), file: Upload
     # Combine (weighted: 30% physical audio, 70% content) - prioritizing verbal expression
     final_score = (audio_score * 0.3 + text_score * 0.7) if text else audio_score
     
+    # Face Emotion Analysis Integration
+    face_score = 0
+    used_face = False
+    if face_emotion and face_emotion not in ["Detecting...", "No Face Found"]:
+        face_map = {
+            "Happy": 8, "Neutral": 0, "Sad": -7, "Angry": -9, "Fearful": -8, "Disgusted": -6, "Surprised": 1
+        }
+        face_score = face_map.get(face_emotion, 0)
+        used_face = True
+        
+        # Re-weight for 3 modalities: 25% Audio, 50% Text, 25% Face
+        if text:
+            final_score = (audio_score * 0.25) + (text_score * 0.50) + (face_score * 0.25)
+        else:
+            final_score = (audio_score * 0.5) + (face_score * 0.5)
+            
     # Final emotional "anchor": If user explicitly says "I am sad", don't let a high pitch/energy make it positive
     if text and "sad" in text.lower() and final_score > 0:
         final_score = -2.0 # Minimum sadness if explicitly stated
     
     analysis_details = f"Tone: {top_emotion} (conf: {confidence*100:.0f}%), Pitch: {('High' if mean_pitch > 200 else 'Low' if mean_pitch < 120 else 'Med')}, Energy: {('High' if mean_rms > 0.05 else 'Low')}"
+    if used_face:
+        analysis_details += f", Face: {face_emotion}"
     
     if text:
         text_sentiment = "positive" if text_score > 2 else "negative" if text_score < -2 else "neutral"
