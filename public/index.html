@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Glow - Mental Health Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="%PUBLIC_URL%/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+</head>
+<body class="bg-[#0f101a] text-white font-['Outfit'] overflow-hidden">
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root" hidden></div>
+
+    <div id="login-screen" class="fixed inset-0 flex items-center justify-center bg-[#0a0b12] z-50">
+        <div class="glass-container p-10 rounded-3xl w-96 text-center border border-white/10 shadow-2xl">
+            <h1 class="text-4xl font-bold mb-6 glow-text">Glow</h1>
+            <p class="text-gray-400 mb-8">Empowering your mental well-being with AI</p>
+            <input type="text" id="username" placeholder="Username" class="input-field mb-4">
+            <input type="password" id="password" placeholder="Password" class="input-field mb-6">
+            <button id="login-btn" class="w-full py-4 bg-gradient-to-r from-purple-500 to-blue-500 rounded-xl font-semibold hover:scale-105 transition-transform">Get Started</button>
+        </div>
+    </div>
+
+    <main id="app-container" class="hidden h-screen flex">
+        <nav class="w-24 bg-[#0a0b12] border-r border-white/5 flex flex-col items-center py-10 space-y-12">
+            <div class="glow-dot"></div>
+            <button class="nav-btn active" data-tab="chat">💬</button>
+            <button class="nav-btn" data-tab="media">🎙️</button>
+            <button class="nav-btn" data-tab="stats">📈</button>
+            <button class="nav-btn logout mt-auto">🚪</button>
+        </nav>
+
+        <div class="flex-1 flex flex-col p-8 overflow-y-auto relative">
+            <div id="alert-banner" class="hidden mb-6 bg-red-500/10 border border-red-500/20 p-6 rounded-2xl flex items-center justify-between">
+                <div>
+                    <h3 class="text-xl font-bold text-red-400">Low Mood Alert</h3>
+                    <p class="text-sm text-red-300">Your mood has been consistently low. We recommend talking to a specialist: <b>+1-800-MENTAL-CARE</b></p>
+                </div>
+                <button class="px-6 py-2 bg-red-500 rounded-lg text-sm font-bold">Suggestions</button>
+            </div>
+
+            <section id="chat-tab" class="tab-content h-full flex flex-col">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-3xl font-semibold">Talk to AI</h2>
+                    <div class="flex items-center space-x-3 text-xs bg-white/5 p-1 px-3 rounded-full border border-white/10">
+                        <button id="lang-en" class="px-2 py-1 rounded-md bg-purple-500 font-bold">EN</button>
+                        <button id="lang-bn" class="px-2 py-1 rounded-md opacity-40 hover:opacity-100 transition-opacity">BN</button>
+                    </div>
+                </div>
+                <div id="chat-messages" class="flex-1 space-y-4 mb-6 pr-4 overflow-y-auto scrollbar-hide">
+                    <div class="message bot px-5 py-3 rounded-2xl bg-white/5 border border-white/10 self-start max-w-[80%]">How are you feeling today? You can type or record your voice.</div>
+                </div>
+                <div class="relative">
+                    <input type="text" id="chat-input" placeholder="Type here..." class="w-full bg-white/5 border border-white/10 rounded-2xl p-5 pr-32 focus:border-purple-500 outline-none">
+                    <div class="absolute right-4 top-1/2 -translate-y-1/2 flex items-center space-x-2">
+                        <button id="record-voice-btn" class="p-3 bg-blue-500/20 text-blue-400 rounded-xl hover:bg-blue-500/40">🎤</button>
+                        <button id="send-chat-btn" class="p-3 bg-purple-500/20 text-purple-400 rounded-xl hover:bg-purple-500/40">🚀</button>
+                    </div>
+                </div>
+            </section>
+
+            <section id="media-tab" class="tab-content hidden h-full flex flex-col">
+                <h2 class="text-3xl font-semibold mb-6">Real-time Analysis</h2>
+                <div class="grid grid-cols-2 gap-8 flex-1">
+                    <div class="relative rounded-3xl overflow-hidden bg-black/50 border border-white/10 flex items-center justify-center group">
+                        <video id="webcam" autoplay muted class="w-full h-full object-cover"></video>
+                        <canvas id="face-overlay" class="absolute inset-0"></canvas>
+                        <div class="absolute bottom-6 left-6 bg-black/60 backdrop-blur px-4 py-2 rounded-xl text-sm border border-white/20">Facial Mood: <span id="face-mood">Detecting...</span></div>
+                    </div>
+                    <div class="flex flex-col space-y-6">
+                        <div class="glass-container flex-1 p-8 border border-white/10 relative">
+                            <h3 class="text-xl font-semibold mb-4 text-purple-400">Deep Analysis</h3>
+                            <div class="space-y-6">
+                                <div class="p-5 bg-white/5 rounded-2xl border border-white/10">
+                                    <h4 class="text-sm text-gray-400 mb-2">Vocal Tone</h4>
+                                    <div class="flex items-center space-x-4">
+                                        <button id="record-audio-large" class="w-16 h-16 bg-purple-500 rounded-full flex items-center justify-center text-2xl active:scale-95 transition-transform">🔴</button>
+                                        <div class="flex flex-col">
+                                            <span id="record-timer" class="text-xl font-mono text-gray-300">00:00</span>
+                                            <span id="vocal-status" class="text-[10px] text-purple-400 italic hidden">Analyzing...</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="p-5 bg-white/5 rounded-2xl border border-white/10">
+                                    <h4 class="text-sm text-gray-400 mb-2">Combined Mood Score</h4>
+                                    <div class="text-5xl font-bold glow-text" id="unified-score">--</div>
+                                </div>
+                                <div class="p-5 bg-white/5 rounded-2xl border border-white/10 flex-1 overflow-y-auto min-h-[150px] relative">
+                                    <h4 class="text-sm text-gray-400 mb-2">Saved Voice Notes</h4>
+                                    <div id="voice-notes-list" class="space-y-3 text-xs">
+                                        <p class="text-gray-500">Record to save notes...</p>
+                                    </div>
+                                    <div id="live-transcript" class="absolute bottom-2 left-2 right-2 p-2 bg-purple-500/20 rounded-lg text-[10px] text-purple-300 hidden italic border border-purple-500/30">Listening...</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="h-32 glass-container p-6 border border-white/10">
+                            <p class="text-gray-400 text-sm mb-2">Analysis Confidence</p>
+                            <div class="w-full bg-white/10 h-2 rounded-full overflow-hidden">
+                                <div id="confidence-bar" class="h-full bg-gradient-to-r from-blue-500 to-purple-500 w-[85%]"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="stats-tab" class="tab-content hidden h-full">
+                <h2 class="text-3xl font-semibold mb-8">Mental Health Graph (VADER)</h2>
+                <div class="w-full h-[500px] glass-container p-10 border border-white/10">
+                    <canvas id="moodChart"></canvas>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <script defer src="%PUBLIC_URL%/app.js"></script>
+</body>
+</html>
