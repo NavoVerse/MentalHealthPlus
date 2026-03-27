@@ -363,7 +363,7 @@ function initChart() {
         data: {
             labels: [],
             datasets: [{
-                label: 'Mood Score (-10 to 10)',
+                label: 'Mood Score (-1 to 1)',
                 data: [],
                 borderColor: '#9b51e0',
                 backgroundColor: 'rgba(155, 81, 224, 0.1)',
@@ -378,8 +378,26 @@ function initChart() {
             responsive: true,
             maintainAspectRatio: false,
             scales: {
-                y: { min: -10, max: 10, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#888' } },
-                x: { grid: { display: false }, ticks: { color: '#888' } }
+                        y: { min: -1, max: 1, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#888' } },
+                x: {
+                    type: 'time',
+                    time: {
+                        unit: 'hour',
+                        displayFormats: {
+                            hour: 'HH:mm',
+                            minute: 'HH:mm',
+                            second: 'HH:mm:ss'
+                        },
+                        tooltipFormat: 'HH:mm:ss'
+                    },
+                    adapters: {
+                        date: {
+                            locale: undefined
+                        }
+                    },
+                    grid: { display: false },
+                    ticks: { color: '#888' }
+                }
             },
             plugins: {
                 legend: { display: false }
@@ -392,9 +410,13 @@ async function loadHistory() {
     const resp = await fetch(`${API_URL}/mood/history/${currentUser.id}`);
     const data = await resp.json();
     
-    // Update Chart
-    chart.data.labels = data.history.map(h => new Date(h.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-    chart.data.datasets[0].data = data.history.map(h => h.score);
+    // Update Chart (x-axis uses real timestamp in system local timezone)
+    const points = data.history.map(h => ({
+        x: new Date(h.timestamp),
+        y: h.score / 10
+    }));
+    chart.data.labels = points.map(p => p.x);
+    chart.data.datasets[0].data = points;
     chart.update();
 
     // Alert

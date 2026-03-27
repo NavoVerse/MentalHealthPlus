@@ -357,7 +357,7 @@ function initChart() {
             labels: [],
             datasets: [
                 {
-                    label: 'Mood Score (-10 to 10)',
+                    label: 'Mood Score (-1 to 1)',
                     data: [],
                     borderColor: '#9b51e0',
                     backgroundColor: 'rgba(155, 81, 224, 0.1)',
@@ -373,7 +373,7 @@ function initChart() {
             responsive: true,
             maintainAspectRatio: false,
             scales: {
-                y: { min: -10, max: 10, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#888' } },
+                y: { min: -1, max: 1, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#888' } },
                 x: { grid: { display: false }, ticks: { color: '#888' } }
             },
             plugins: {
@@ -388,7 +388,7 @@ async function loadHistory() {
     const data = await resp.json();
 
     chart.data.labels = data.history.map(h => new Date(h.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-    chart.data.datasets[0].data = data.history.map(h => h.score);
+    chart.data.datasets[0].data = data.history.map(h => h.score / 10);
     chart.update();
 
     if (data.alert) {

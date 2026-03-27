@@ -105,6 +105,12 @@ def translate_if_needed(text: str) -> str:
         pass
     return text
 
+def serialize_timestamp(dt: datetime) -> str:
+    # SQLite returns naive datetimes here; these app timestamps are stored as UTC.
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
+
 def check_persistent_sadness(user_id: int, db: Session) -> bool:
     # Get last 5 logs for this user
     last_logs = db.query(MoodLog).filter(MoodLog.user_id == user_id).order_by(MoodLog.timestamp.desc()).limit(5).all()
@@ -325,7 +331,7 @@ def analyze_audio(user_id: int = Form(...), text: str = Form(None), face_emotion
 @app.get("/voice_history/{user_id}")
 def get_voice_history(user_id: int, db: Session = Depends(get_db)):
     notes = db.query(VoiceNote).filter(VoiceNote.user_id == user_id).order_by(VoiceNote.timestamp.desc()).all()
-    return [{"id": n.id, "filename": n.filename, "timestamp": n.timestamp, "text": n.text, "url": f"/voice_notes/{n.filename}"} for n in notes]
+    return [{"id": n.id, "filename": n.filename, "timestamp": serialize_timestamp(n.timestamp), "text": n.text, "url": f"/voice_notes/{n.filename}"} for n in notes]
 
 @app.get("/mood/history/{user_id}")
 def get_mood_history(user_id: int, db: Session = Depends(get_db)):
@@ -357,7 +363,7 @@ def get_mood_history(user_id: int, db: Session = Depends(get_db)):
         ]
 
     return {
-        "history": [{"score": l.score, "timestamp": l.timestamp, "mode": l.mode} for l in reversed(logs)],
+        "history": [{"score": l.score, "timestamp": serialize_timestamp(l.timestamp), "mode": l.mode} for l in reversed(logs)],
         "alert": alert,
         "average_mood": average_mood,
         "suggestions": suggestions
